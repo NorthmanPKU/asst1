@@ -1,9 +1,10 @@
 #include <stdio.h>
 #include <pthread.h>
+#include <algorithm>
 
 // Use this code to time your threads
 #include "CycleTimer.h"
-
+#define Q4
 
 /*
 
@@ -53,7 +54,7 @@ static inline int mandel(float c_re, float c_im, int count)
     int i;
     for (i = 0; i < count; ++i) {
 
-        if (z_re * z_re + z_im * z_im > 4.f)
+        if (z_re * z_re + z_im * z_im > 4.f) // 
             break;
 
         float new_re = z_re*z_re - z_im*z_im;
@@ -117,12 +118,37 @@ typedef struct {
 //
 // Thread entrypoint.
 void* workerThreadStart(void* threadArgs) {
-
     WorkerArgs* args = static_cast<WorkerArgs*>(threadArgs);
+    // printf("Thread %d starts from x0 = %f, x1 = %f, y0 = %f, y1 = %f\n", args->threadId, args->x0, args->x1, args->y0, args->y1);
+    float dx = (args->x1 - args->x0) / args->width;
+    float dy = (args->y1 - args->y0) / args->height;
+    uint heightPerThread = (args->height + args->numThreads - 1) / args->numThreads; // ceil division
+    int thisHeight = std::min(heightPerThread, args->height - args->threadId * heightPerThread);
 
-    // TODO: Implement worker thread here.
+#ifdef Q4 // Higher performance version
+    uint index_y = args->threadId;
+    while (index_y < args->height) {
+        for (int j = 0; j < args->width; ++j) {
+            float x = args->x0 + j * dx;
+            float y = args->y0 + dy * index_y;
 
-    printf("Hello world from thread %d\n", args->threadId);
+            int index = (index_y * args->width + j);
+            args->output[index] = mandel(x, y, args->maxIterations);
+        }
+        index_y += args->numThreads;
+    }
+#else
+    printf("Thread %d starts from %d, %d\n", args->threadId, args->threadId * heightPerThread, thisHeight);
+    for (int i = 0; i < thisHeight; i++) {
+        for (int j = 0; j < args->width; ++j) {
+            float x = args->x0 + j * dx;
+            float y = args->y0 + dy * (i + args->threadId * heightPerThread);
+
+            int index = ((i + args->threadId * heightPerThread) * args->width + j);
+            args->output[index] = mandel(x, y, args->maxIterations);
+        }
+    }
+#endif
 
     return NULL;
 }
@@ -149,9 +175,23 @@ void mandelbrotThread(
     pthread_t workers[MAX_THREADS];
     WorkerArgs args[MAX_THREADS];
 
+    float dy = (y1 - y0) / height;
+    // printf("x0 = %f, x1 = %f, y0 = %f, y1 = %f\n", x0, x1, y0, y1);
+    // printf("Height: %d, Width: %d\n", height, width);
+
     for (int i=0; i<numThreads; i++) {
         // TODO: Set thread arguments here.
         args[i].threadId = i;
+        args[i].x0 = x0;
+        args[i].x1 = x1;
+        args[i].y0 = y0;
+        args[i].y1 = y1;
+        args[i].width = width;
+        args[i].height = height;
+        args[i].maxIterations = maxIterations;
+        args[i].output = output;
+        args[i].threadId = i;
+        args[i].numThreads = numThreads;
     }
 
     // Fire up the worker threads.  Note that numThreads-1 pthreads
